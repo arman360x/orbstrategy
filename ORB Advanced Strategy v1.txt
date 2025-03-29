@@ -1,0 +1,239 @@
+//@version=6
+strategy("ORB Advanced Strategy V1", overlay = true,pyramiding = 3)
+
+// === INPUTS ===
+// Session Inputs
+session_range = input.session("0900-1630", title="Signal Active Session (HHMM-HHMM)")
+orb_session = input.session("0915-0920", title="ORB Session")
+
+// ORB Config
+inputMax = input(5, title="ORB total time (minutes)")
+
+
+
+// TP & SL Config
+tp_enabled = input(true, title="Enable Take Profits")
+tp1_pips = input(10, title="Take Profit 1 (Pips)")
+tp2_pips = input(20, title="Take Profit 2 (Pips)")
+tp3_pips = input(30, title="Take Profit 3 (Pips)")
+sl_enabled = input(true, title="Enable Stop Loss")
+sl_pips = input(10, title="Stop Loss (Pips)")
+use_ticks = input(false, title="Use Ticks instead of Pips")
+
+// Misc
+heikin_ashi_tp = input(true, title="Enable Heikin Ashi Take Profit Alert")
+label_size = input.string("normal", title="TP/SL Label Text Size", options=["tiny", "small", "normal", "large", "huge"])
+// Label shift
+label_shift = input.int(10, title="TP/SL Label Bar Shift")
+
+
+
+
+// === SESSION DETECTION ===
+in_signal_time = not na(time(timeframe.period, session_range))
+in_session = not na(time(timeframe.period, orb_session))
+
+// === ORB HIGH LOW ===
+var float orb_high = na
+var float orb_low = na
+
+is_first = in_session and not in_session[1]
+if is_first
+    orb_high := high
+    orb_low := low
+else
+    orb_high := orb_high[1]
+    orb_low := orb_low[1]
+
+if high > orb_high and in_session
+    orb_high := high
+if low < orb_low and in_session
+    orb_low := low
+
+plot(orb_high, style=plot.style_line, color=color.green, title="ORB High", linewidth=2)
+plot(orb_low, style=plot.style_line, color=color.red, title="ORB Low", linewidth=2)
+
+// === STRATEGY ===
+long_condition = ta.crossover(close, orb_high)
+short_condition = ta.crossunder(close, orb_low)
+
+// === SIGNAL LABELS ===
+if long_condition and in_signal_time
+    label.new(bar_index, low -5*syminfo.mintick, text="BUY", color=color.green, textcolor=color.white, size=label_size, style=label.style_label_up)
+
+if short_condition and in_signal_time
+    label.new(bar_index, high + 5*syminfo.mintick, text="SELL", color=color.red, textcolor=color.white, size=label_size, style=label.style_label_down)
+
+// === TP & SL Labels ===
+var label tp1_label = na
+var label tp2_label = na
+var label tp3_label = na
+var label sl_label_1 = na
+var label sl_label_2 = na
+var label sl_label_3 = na
+
+if long_condition or short_condition
+    label.delete(tp1_label)
+    label.delete(tp2_label)
+    label.delete(tp3_label)
+    label.delete(sl_label_1)
+    label.delete(sl_label_2)
+    label.delete(sl_label_3)
+
+// === TRACKING ORDERS ===
+var bool long_trade_open = false
+var bool short_trade_open = false
+
+
+// === STRATEGY EXECUTION (Opening 3 Orders) ===
+// lot_size_total = 1  // Total lot size (for simplicity, can be changed)
+// lot_size_1 = lot_size_total * 0.30  // 30% for first order
+// lot_size_2 = lot_size_total * 0.30  // 30% for second order
+// lot_size_3 = lot_size_total * 0.40  // 40% for third order
+
+// Input for total lot size and percentage distribution
+lot_size_total = input(1, title="Total Lot Size")
+
+// Input for percentage distribution
+lot_size_1_percentage = input(30, title="Percentage for First Order") / 100
+lot_size_2_percentage = input(30, title="Percentage for Second Order") / 100
+lot_size_3_percentage = input(40, title="Percentage for Third Order") / 100
+
+// Calculate individual lot sizes based on the total lot size and percentages
+lot_size_1 = lot_size_total * lot_size_1_percentage  // 30% for first order
+lot_size_2 = lot_size_total * lot_size_2_percentage  // 30% for second order
+lot_size_3 = lot_size_total * lot_size_3_percentage  // 40% for third order
+
+
+// Declare the variables globally at the beginning
+var float tp1_price = na
+var float tp2_price = na
+var float tp3_price = na
+var float sl_price_1 = na
+var float sl_price_2 = na
+var float sl_price_3 = na
+
+
+if long_condition and in_signal_time
+    tp1_price := close + (use_ticks ? tp1_pips * syminfo.mintick : tp1_pips * syminfo.pointvalue)
+    sl_price_1 := close - (use_ticks ? sl_pips * syminfo.mintick : sl_pips * syminfo.pointvalue)
+
+    // TP and SL Labels for Long Position 1
+    tp1_label := label.new(bar_index + label_shift, tp1_price, "TP1: " + str.tostring(tp1_price), color=color.green, textcolor=color.white, size=label_size, style=label.style_label_left)
+    sl_label_1 := label.new(bar_index + label_shift, sl_price_1, "SL1: " + str.tostring(sl_price_1), color=color.red, textcolor=color.white, size=label_size, style=label.style_label_left)
+
+    entry_price = close
+    // Opening the first Long Position
+    strategy.entry("Long 1", strategy.long, qty=lot_size_1)
+
+if long_condition and in_signal_time
+    tp2_price := close + (use_ticks ? tp2_pips * syminfo.mintick : tp2_pips * syminfo.pointvalue)
+    sl_price_2 := close - (use_ticks ? sl_pips * syminfo.mintick : sl_pips * syminfo.pointvalue)
+
+    // TP and SL Labels for Long Position 2
+    tp2_label := label.new(bar_index + label_shift, tp2_price, "TP2: " + str.tostring(tp2_price), color=color.green, textcolor=color.white, size=label_size, style=label.style_label_left)
+    sl_label_2 := label.new(bar_index + label_shift, sl_price_2, "SL2: " + str.tostring(sl_price_2), color=color.red, textcolor=color.white, size=label_size, style=label.style_label_left)
+
+    entry_price = close
+    // Opening the second Long Position
+    strategy.entry("Long 2", strategy.long, qty=lot_size_2)
+
+if long_condition and in_signal_time
+    tp3_price := close + (use_ticks ? tp3_pips * syminfo.mintick : tp3_pips * syminfo.pointvalue)
+    sl_price_3 := close - (use_ticks ? sl_pips * syminfo.mintick : sl_pips * syminfo.pointvalue)
+
+    // TP and SL Labels for Long Position 3
+    tp3_label := label.new(bar_index + label_shift, tp3_price, "TP3: " + str.tostring(tp3_price), color=color.green, textcolor=color.white, size=label_size, style=label.style_label_left)
+    sl_label_3 := label.new(bar_index + label_shift, sl_price_3, "SL3: " + str.tostring(sl_price_3), color=color.red, textcolor=color.white, size=label_size, style=label.style_label_left)
+
+    entry_price = close
+    // Opening the third Long Position
+    strategy.entry("Long 3", strategy.long, qty=lot_size_3)
+
+if short_condition and in_signal_time
+    tp1_price := close - (use_ticks ? tp1_pips * syminfo.mintick : tp1_pips * syminfo.pointvalue)
+    sl_price_1 := close + (use_ticks ? sl_pips * syminfo.mintick : sl_pips * syminfo.pointvalue)
+
+    // TP and SL Labels for Short Position 1
+    tp1_label := label.new(bar_index + label_shift, tp1_price, "TP1: " + str.tostring(tp1_price), color=color.green, textcolor=color.white, size=label_size, style=label.style_label_left)
+    sl_label_1 := label.new(bar_index + label_shift, sl_price_1, "SL1: " + str.tostring(sl_price_1), color=color.red, textcolor=color.white, size=label_size, style=label.style_label_left)
+
+    entry_price = close
+    // Opening the first Short Position
+    strategy.entry("Short 1", strategy.short, qty=lot_size_1)
+
+if short_condition and in_signal_time
+    tp2_price := close - (use_ticks ? tp2_pips * syminfo.mintick : tp2_pips * syminfo.pointvalue)
+    sl_price_2 := close + (use_ticks ? sl_pips * syminfo.mintick : sl_pips * syminfo.pointvalue)
+
+    // TP and SL Labels for Short Position 2
+    tp2_label := label.new(bar_index + label_shift, tp2_price, "TP2: " + str.tostring(tp2_price), color=color.green, textcolor=color.white, size=label_size, style=label.style_label_left)
+    sl_label_2 := label.new(bar_index + label_shift, sl_price_2, "SL2: " + str.tostring(sl_price_2), color=color.red, textcolor=color.white, size=label_size, style=label.style_label_left)
+
+    entry_price = close
+    // Opening the second Short Position
+    strategy.entry("Short 2", strategy.short, qty=lot_size_2)
+
+if short_condition and in_signal_time
+    tp3_price := close - (use_ticks ? tp3_pips * syminfo.mintick : tp3_pips * syminfo.pointvalue)
+    sl_price_3 := close + (use_ticks ? sl_pips * syminfo.mintick : sl_pips * syminfo.pointvalue)
+
+    // TP and SL Labels for Short Position 3
+    tp3_label := label.new(bar_index + label_shift, tp3_price, "TP3: " + str.tostring(tp3_price), color=color.green, textcolor=color.white, size=label_size, style=label.style_label_left)
+    sl_label_3 := label.new(bar_index + label_shift, sl_price_3, "SL3: " + str.tostring(sl_price_3), color=color.red, textcolor=color.white, size=label_size, style=label.style_label_left)
+
+    entry_price = close
+    // Opening the third Short Position
+    strategy.entry("Short 3", strategy.short, qty=lot_size_3)
+
+// Exiting the first Long Position (TP1)
+strategy.exit("Exit Long 1", "Long 1", limit=tp1_price, stop=sl_price_1)
+
+// Exiting the second Long Position (TP2)
+strategy.exit("Exit Long 2", "Long 2", limit=tp2_price, stop=sl_price_2)
+
+// Exiting the third Long Position (TP3)
+strategy.exit("Exit Long 3", "Long 3", limit=tp3_price, stop=sl_price_3)
+
+// Exiting the first Short Position (TP1)
+strategy.exit("Exit Short 1", "Short 1", limit=tp1_price, stop=sl_price_1)
+
+// Exiting the second Short Position (TP2)
+strategy.exit("Exit Short 2", "Short 2", limit=tp2_price, stop=sl_price_2)
+
+// Exiting the third Short Position (TP3)
+strategy.exit("Exit Short 3", "Short 3", limit=tp3_price, stop=sl_price_3)
+
+    
+// === HEIKIN ASHI ===
+var bool long_position_open = false
+var bool short_position_open = false
+
+var float ha_open = na
+ha_close = (open + high + low + close) / 4
+ha_open := na(ha_open[1]) ? (open + close) / 2 : (ha_open[1] + ha_close[1]) / 2
+ha_high = math.max(high, math.max(ha_open, ha_close))
+ha_low = math.min(low, math.min(ha_open, ha_close))
+
+ha_bullish = ha_close > ha_open
+ha_bearish = ha_close < ha_open
+
+if long_condition and in_signal_time
+    long_position_open := true
+if short_condition and in_signal_time
+    short_position_open := true
+
+if (heikin_ashi_tp and ha_bearish and long_position_open and in_signal_time)
+    alert("Take profit triggered - Heikin Ashi turned bearish", alert.freq_once_per_bar)
+    long_position_open := false
+
+if (heikin_ashi_tp and ha_bullish and short_position_open and in_signal_time)
+    alert("Take profit triggered - Heikin Ashi turned bullish", alert.freq_once_per_bar)
+    short_position_open := false
+
+
+
+// === RESET TRACKING ON CLOSE ===
+if strategy.opentrades == 0
+    long_trade_open := false
+    short_trade_open := false
