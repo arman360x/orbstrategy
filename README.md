@@ -1,4 +1,4 @@
-# Pyramiding Strategy Indicator
+# ORB  Strategy Indicator and Strategy
 
 This is a **Pine Script-based indicator** that implements a **pyramiding strategy** on TradingView. The strategy scales into a position by opening multiple trades based on predefined conditions. The indicator supports both **long** and **short** positions, with configurable lot sizes for each position. The exit strategy includes take-profit (TP) and stop-loss (SL) levels for each trade.
 
